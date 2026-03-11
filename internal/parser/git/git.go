@@ -23,7 +23,8 @@ import (
 	"strings"
 	"time"
 
-	parser "github.com/abuishgair/astra/internal/parser"
+	parser "github.com/TSELab/astra/internal/parser"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"

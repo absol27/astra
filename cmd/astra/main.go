@@ -8,13 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
-	graph "github.com/abuishgair/astra/internal/graph"
-	"github.com/abuishgair/astra/internal/mapper"
-	parser "github.com/abuishgair/astra/internal/parser"
-	buildinfoparser "github.com/abuishgair/astra/internal/parser/buildinfo"
-	gitparser "github.com/abuishgair/astra/internal/parser/git"
-	intotoparser "github.com/abuishgair/astra/internal/parser/intoto"
-	slsaparser "github.com/abuishgair/astra/internal/parser/slsa"
+	graph "github.com/TSELab/astra/internal/graph"
+	"github.com/TSELab/astra/internal/mapper"
+	parser "github.com/TSELab/astra/internal/parser"
+	buildinfoparser "github.com/TSELab/astra/internal/parser/buildinfo"
+	gitparser "github.com/TSELab/astra/internal/parser/git"
+	intotoparser "github.com/TSELab/astra/internal/parser/intoto"
+	slsaparser "github.com/TSELab/astra/internal/parser/slsa"
 )
 
 func must(err error) {

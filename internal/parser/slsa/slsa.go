@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	parser "github.com/abuishgair/astra/internal/parser"
+	parser "github.com/TSELab/astra/internal/parser"
 )
 
 type SlsaParser struct{}

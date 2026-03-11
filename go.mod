@@ -1,4 +1,4 @@
-module github.com/abuishgair/astra
+module github.com/TSELab/astra
 
 go 1.24.1
 

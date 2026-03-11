@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/ProtonMail/gopenpgp/v3/crypto"
-	graph "github.com/abuishgair/astra/internal/graph"
-	parser "github.com/abuishgair/astra/internal/parser"
+	graph "github.com/TSELab/astra/internal/graph"
+	parser "github.com/TSELab/astra/internal/parser"
 )
 
 type BuildinfoParser struct{}

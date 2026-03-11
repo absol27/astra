@@ -3,8 +3,8 @@ package mapper
 import (
 	"sort"
 
-	"github.com/abuishgair/astra/internal/graph"
-	"github.com/abuishgair/astra/internal/parser"
+	"github.com/TSELab/astra/internal/graph"
+	"github.com/TSELab/astra/internal/parser"
 )
 
 // ToAstraGraph converts parser.Mapped ([]Record) into a typed graph.AstraGraph.

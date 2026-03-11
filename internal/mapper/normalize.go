@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/abuishgair/astra/internal/graph"
-	"github.com/abuishgair/astra/internal/parser"
+	"github.com/TSELab/astra/internal/graph"
+	"github.com/TSELab/astra/internal/parser"
 )
 
 // cloneMap defensively copies a map (so later mutation doesn’t affect source records).
