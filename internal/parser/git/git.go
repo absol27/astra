@@ -1,3 +1,17 @@
+/*
+Package git implements the GitParser for AStRA.
+
+GitParser parses Git repositories and maps commits and files
+into AStRA’s DAG-based artifact graph.
+
+For each commit:
+- The commit is represented as a step.
+- Authors are represented as principals.
+- The Git is treated as a resource.
+- Files are tracked as input/output artifacts.
+- Parent commits are mapped as input artifacts.
+- The commit itself and changed files are mapped as output artifacts.
+*/
 package git
 
 import (
@@ -16,8 +30,11 @@ import (
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 )
 
+// GitParser implements parser.Parser for Git repositories.
 type GitParser struct{}
 
+// MakeArtifactID returns a namespaced AStRA artifact ID for a file
+// at a specific commit in the given repository.
 func MakeArtifactID(repoURL string, commitHash, filePath string) string {
 	repoSlug := getRepoSlug(repoURL)
 	return fmt.Sprintf("artifact:gitfile:%s@%s:%s", repoSlug, commitHash, filePath)
@@ -25,29 +42,26 @@ func MakeArtifactID(repoURL string, commitHash, filePath string) string {
 
 /*
 MakeStepID returns namespaced AStRA Step ID for a Git commit.
-The function takes a repository URL and a commit hash,
-extracts "host/owner/repo" slug, and formats it into an
-AStRA step identifier of the form:
-step:commit:<host>/<owner>/<repo>@<commit-hash>
-This ensures unique, and deterministic step identifiers regardless of how the repository is cloned locally.
-StepID: step:commit:github.com/eman/astra-go@84a1aafee95098a14f351d38013f096fe6dc9e58
+Step ID format: step:commit:<host>/<owner>/<repo>@<commit-hash>
 */
 func MakeStepID(repoURL string, commitHash string) string {
 	repoSlug := getRepoSlug(repoURL)
 	return fmt.Sprintf("step:commit:%s@%s", repoSlug, commitHash)
 }
 
+// MakeCommitArtifactID returns namespaced AStRA artifact ID
+// for a Git commit.
+// Commit artifact ID format: artifact:gitcommit:<host>/<owner>/<repo>@<commit-hash>
 func MakeCommitArtifactID(repoURL string, commitHash string) string {
 	repoSlug := getRepoSlug(repoURL)
 	return fmt.Sprintf("artifact:gitcommit:%s@%s", repoSlug, commitHash)
 }
 
-/*
-Supported URL formats include:
-https://github.com/owner/repo.git
-https://github.com/owner/repo
-git@github.com:owner/repo.git
-*/
+// getRepoSlug normalizes a Git repository URL into a host/owner/repo slug.
+// Supported URL formats include:
+// https://github.com/owner/repo.git
+// https://github.com/owner/repo
+// git@github.com:owner/repo.git
 func getRepoSlug(raw string) string {
 	// Handle SSH scp-style: git@github.com:owner/repo.git
 	if strings.HasPrefix(raw, "git@") {
@@ -71,6 +85,10 @@ func getRepoSlug(raw string) string {
 	return raw
 }
 
+// GetCommitIO computes the input and output files for a commit in a Git repository.
+// - Inputs: files from parent commits that are modified or deleted.
+// - Outputs: files added or modified in this commit.
+// - Returns slices of *object.File for inputs and outputs.
 func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outputs []*object.File, err error) {
 	commit, err := repo.CommitObject(plumbing.NewHash(hash))
 	if err != nil {
@@ -99,7 +117,7 @@ func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outp
 	seenIn := map[string]bool{}
 	seenOut := map[string]bool{}
 
-	// Root commit: everything is output
+	// if this is a root commit: everything is output
 	if parentTree == nil {
 		if err := currTree.Files().ForEach(func(f *object.File) error {
 			if seenOut[f.Name] {
@@ -177,7 +195,12 @@ func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outp
 	return inputs, outputs, nil
 }
 
-// Parse get repo url, clone it and get git log and output map it into json file
+// Parse clones the Git repository from the given URL, extracts commits,
+// and maps them into a parser Mapped structure for AStRA.
+//
+// Each commit is represented as a step, authors as principals, Git as a resource
+// parent commits as input artifacts, and the commit itself plus changed files
+// as output artifacts.
 func (p *GitParser) Parse(repoURL string) (parser.Mapped, error) {
 	tmpDir := filepath.Join(os.TempDir(), "gitrepo-history")
 	_ = os.RemoveAll(tmpDir) // cleanup from previous runs
