@@ -1,4 +1,4 @@
-package parser
+package buildinfo
 
 import (
 	"bufio"
@@ -12,11 +12,12 @@ import (
 
 	"github.com/ProtonMail/gopenpgp/v3/crypto"
 	graph "github.com/abuishgair/astra/internal/graph"
+	parser "github.com/abuishgair/astra/internal/parser"
 )
 
 type BuildinfoParser struct{}
 
-func (p *BuildinfoParser) Parse(path string) (Mapped, error) {
+func (p *BuildinfoParser) Parse(path string) (parser.Mapped, error) {
 	graph, err := parseBuildinfo(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -41,7 +42,7 @@ func (p *BuildinfoParser) Parse(path string) (Mapped, error) {
 	}
 
 	fmt.Printf("Graph saved to %s\n", outPath)
-	n := Mapped{Source: "build-info", NormalizedAt: time.Now().Unix()}
+	n := parser.Mapped{Source: "build-info", NormalizedAt: time.Now().Unix()}
 	return n, nil
 }
 

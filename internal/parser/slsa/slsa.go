@@ -1,20 +1,22 @@
-package parser
+package slsa
 
 import (
 	"os"
 	"time"
+
+	parser "github.com/abuishgair/astra/internal/parser"
 )
 
 type SlsaParser struct{}
 
-func (p *SlsaParser) Parse(path string) (Mapped, error) {
+func (p *SlsaParser) Parse(path string) (parser.Mapped, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return Mapped{}, err
+		return parser.Mapped{}, err
 	}
 	print(b)
 
-	n := Mapped{Source: "SLSA", NormalizedAt: time.Now().Unix()}
+	n := parser.Mapped{Source: "SLSA", NormalizedAt: time.Now().Unix()}
 
 	return n, nil
 }

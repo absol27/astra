@@ -10,7 +10,11 @@ import (
 
 	graph "github.com/abuishgair/astra/internal/graph"
 	"github.com/abuishgair/astra/internal/mapper"
-	parse "github.com/abuishgair/astra/internal/parser"
+	parser "github.com/abuishgair/astra/internal/parser"
+	buildinfoparser "github.com/abuishgair/astra/internal/parser/buildinfo"
+	gitparser "github.com/abuishgair/astra/internal/parser/git"
+	intotoparser "github.com/abuishgair/astra/internal/parser/intoto"
+	slsaparser "github.com/abuishgair/astra/internal/parser/slsa"
 )
 
 func must(err error) {
@@ -39,8 +43,7 @@ func main() {
 	sub := os.Args[1]
 	switch sub {
 	case "parse":
-		var parser parse.Parser
-
+		var parser parser.Parser
 		fs := flag.NewFlagSet("parse", flag.ExitOnError)
 		in := fs.String("i", "", "input raw log (JSON)")
 		out := fs.String("o", "", "output normalized JSON")
@@ -52,13 +55,13 @@ func main() {
 		}
 		switch *format {
 		case "git": // git logs
-			parser = &parse.GitParser{}
+			parser = &gitparser.GitParser{}
 		case "intoto": // in-toto links
-			parser = &parse.InTotoParser{}
+			parser = &intotoparser.InTotoParser{}
 		case "slsa": // slsa
-			parser = &parse.SlsaParser{}
+			parser = &slsaparser.SlsaParser{}
 		case "buildinfo": // debian buildinfo logs
-			parser = &parse.BuildinfoParser{}
+			parser = &buildinfoparser.BuildinfoParser{}
 
 		default:
 			fmt.Fprintf(os.Stderr, "unknown format: %s\n", *format)
@@ -81,7 +84,7 @@ func main() {
 		}
 
 		// Read parsed
-		var parsed parse.Mapped
+		var parsed parser.Mapped
 		b, err := os.ReadFile(*in)
 		must(err)
 		must(json.Unmarshal(b, &parsed))

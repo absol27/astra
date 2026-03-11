@@ -1,4 +1,4 @@
-package parser
+package git
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	parser "github.com/abuishgair/astra/internal/parser"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -177,7 +178,7 @@ func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outp
 }
 
 // Parse get repo url, clone it and get git log and output map it into json file
-func (p *GitParser) Parse(repoURL string) (Mapped, error) {
+func (p *GitParser) Parse(repoURL string) (parser.Mapped, error) {
 	tmpDir := filepath.Join(os.TempDir(), "gitrepo-history")
 	_ = os.RemoveAll(tmpDir) // cleanup from previous runs
 
@@ -189,38 +190,38 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 		Progress: os.Stdout,
 	})
 	if err != nil {
-		return Mapped{}, fmt.Errorf("clone error: %w", err)
+		return parser.Mapped{}, fmt.Errorf("clone error: %w", err)
 	}
 
 	rem, err := repo.Remote("origin")
 	if err != nil {
-		return Mapped{}, fmt.Errorf("remote error: %w", err)
+		return parser.Mapped{}, fmt.Errorf("remote error: %w", err)
 	}
 	remoteURLs := rem.Config().URLs
 	if len(remoteURLs) == 0 {
-		return Mapped{}, fmt.Errorf("origin remote has no URLs")
+		return parser.Mapped{}, fmt.Errorf("origin remote has no URLs")
 	}
 	remoteURL := remoteURLs[0]
 	fmt.Println("remote:", remoteURL)
 
 	ref, err := repo.Head()
 	if err != nil {
-		return Mapped{}, fmt.Errorf("head error: %w", err)
+		return parser.Mapped{}, fmt.Errorf("head error: %w", err)
 	}
 
 	commits, err := repo.Log(&git.LogOptions{From: ref.Hash()})
 	if err != nil {
-		return Mapped{}, fmt.Errorf("log error: %w", err)
+		return parser.Mapped{}, fmt.Errorf("log error: %w", err)
 	}
 
-	out := Mapped{
+	out := parser.Mapped{
 		Source:       "go-git",
 		NormalizedAt: time.Now().Unix(),
 	}
 
 	err = commits.ForEach(func(c *object.Commit) error {
-		rec := Record{
-			Step: Item{
+		rec := parser.Record{
+			Step: parser.Item{
 				ID:    MakeStepID(remoteURL, c.Hash.String()),
 				Label: "Commit",
 				Kind:  "step",
@@ -229,7 +230,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 					"message": strings.TrimSpace(c.Message),
 				},
 			},
-			Principal: Item{
+			Principal: parser.Item{
 				ID:    "principal:" + c.Author.Email,
 				Label: c.Author.Name,
 				Kind:  "principal",
@@ -253,7 +254,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 					return err
 				}
 				parentHash = parent.Hash.String()
-				rec.ArtifactsIn = append(rec.ArtifactsIn, Item{
+				rec.ArtifactsIn = append(rec.ArtifactsIn, parser.Item{
 					ID:    MakeCommitArtifactID(remoteURL, parentHash),
 					Label: parentHash,
 					Kind:  "git-commit",
@@ -273,7 +274,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 			if f == nil || parentHash == "" {
 				continue
 			}
-			rec.ArtifactsIn = append(rec.ArtifactsIn, Item{
+			rec.ArtifactsIn = append(rec.ArtifactsIn, parser.Item{
 				ID:    MakeArtifactID(remoteURL, parentHash, f.Name),
 				Label: f.Name,
 				Kind:  "git-file",
@@ -286,7 +287,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 		}
 
 		//add the commit as output artifact
-		rec.ArtifactsOut = append(rec.ArtifactsOut, Item{
+		rec.ArtifactsOut = append(rec.ArtifactsOut, parser.Item{
 			ID:    MakeCommitArtifactID(remoteURL, c.Hash.String()),
 			Label: c.Hash.String(),
 			Kind:  "git-commit",
@@ -302,7 +303,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 			if f == nil {
 				continue
 			}
-			rec.ArtifactsOut = append(rec.ArtifactsOut, Item{
+			rec.ArtifactsOut = append(rec.ArtifactsOut, parser.Item{
 				ID:    MakeArtifactID(remoteURL, c.Hash.String(), f.Name),
 				Label: f.Name,
 				Kind:  "git-file",
@@ -315,7 +316,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 		}
 
 		// Resources
-		rec.Resources = append(rec.Resources, Item{
+		rec.Resources = append(rec.Resources, parser.Item{
 			ID:    "resource:git",
 			Label: "git",
 			Kind:  "vcs",
@@ -325,7 +326,7 @@ func (p *GitParser) Parse(repoURL string) (Mapped, error) {
 		return nil
 	})
 	if err != nil {
-		return Mapped{}, err
+		return parser.Mapped{}, err
 	}
 
 	return out, nil
