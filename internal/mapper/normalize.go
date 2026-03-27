@@ -20,9 +20,9 @@ func cloneMap(in map[string]string) map[string]string {
 	return out
 }
 
-// normalizeArtifact converts a parser.Item into a typed graph.Artifact.
+// normalizeArtifact converts a parser.ArtifactItem into a typed graph.Artifact.
 // It preserves all attrs in Metadata and additionally extracts Hash/Size when present.
-func normalizeArtifact(it parser.Item) graph.Artifact {
+func normalizeArtifact(it parser.ArtifactItem) graph.Artifact {
 	a := graph.Artifact{
 		ID:       it.ID,
 		Kind:     normalizeArtifactKind(it.Kind),
@@ -104,7 +104,7 @@ func normalizeStepArch(md map[string]string) string {
 	return ""
 }
 
-func normalizeResourceType(r parser.Item) string {
+func normalizeResourceType(r parser.ResourceItem) string {
 	// parser emits Kind="vcs" for git; keep that if present.
 	if strings.TrimSpace(r.Kind) != "" {
 		return r.Kind
@@ -112,7 +112,7 @@ func normalizeResourceType(r parser.Item) string {
 	return ""
 }
 
-func normalizeResourceURI(r parser.Item) string {
+func normalizeResourceURI(r parser.ResourceItem) string {
 	// If we later store URI in attrs, read it here; otherwise empty.
 	if r.Attrs != nil {
 		if uri, ok := r.Attrs["uri"]; ok && strings.TrimSpace(uri) != "" {
@@ -122,7 +122,7 @@ func normalizeResourceURI(r parser.Item) string {
 	return ""
 }
 
-func normalizeResourceFormat(r parser.Item) string {
+func normalizeResourceFormat(r parser.ResourceItem) string {
 	// Prefer explicit, else infer.
 	if r.Attrs != nil {
 		if f, ok := r.Attrs["format"]; ok && strings.TrimSpace(f) != "" {

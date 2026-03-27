@@ -18,16 +18,17 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	parser "github.com/TSELab/astra/internal/parser"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 )
 
@@ -163,7 +164,8 @@ func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outp
 			}
 			f, err := parentTree.File(path)
 			if err != nil {
-				return nil, nil, err
+				// submodule/symlink edge-case; skip metadata but continue
+				continue
 			}
 			seenIn[path] = true
 			inputs = append(inputs, f)
@@ -175,7 +177,8 @@ func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outp
 			if !seenIn[inPath] {
 				fBefore, err := parentTree.File(inPath)
 				if err != nil {
-					return nil, nil, err
+					// submodule/symlink edge-case; skip metadata but continue
+					continue
 				}
 				seenIn[inPath] = true
 				inputs = append(inputs, fBefore)
@@ -196,20 +199,120 @@ func GetCommitIO(repo *git.Repository, hash string) (inputs []*object.File, outp
 	return inputs, outputs, nil
 }
 
-// Parse clones the Git repository from the given URL, extracts commits,
-// and maps them into a parser Mapped structure for AStRA.
+// commitToRecord maps a single git commit into a parser.Record.
+// It computes file-level IO, parent commit artifacts, and attaches the git resource.
+func commitToRecord(c *object.Commit, repo *git.Repository, remoteURL string) (parser.Record, error) {
+	rec := parser.Record{
+		Step: parser.StepItem{
+			ID:    MakeStepID(remoteURL, c.Hash.String()),
+			Label: "Commit",
+			Kind:  "step",
+			Attrs: map[string]string{
+				"phase":   "source",
+				"message": strings.TrimSpace(c.Message),
+			},
+		},
+		Principal: parser.PrincipalItem{
+			ID:    "principal:" + c.Author.Email,
+			Label: c.Author.Name,
+			Kind:  "principal",
+			Attrs: map[string]string{"email": c.Author.Email},
+		},
+	}
+
+	inputs, outputs, err := GetCommitIO(repo, c.Hash.String())
+	if err != nil {
+		return parser.Record{}, err
+	}
+
+	// Parent hash is needed to version the "before" (input) artifacts.
+	parentHash := ""
+	if c.NumParents() > 0 {
+		for i := 0; i < c.NumParents(); i++ {
+			parent, err := c.Parent(i)
+			if err != nil {
+				return parser.Record{}, err
+			}
+			parentHash = parent.Hash.String()
+			rec.ArtifactsIn = append(rec.ArtifactsIn, parser.ArtifactItem{
+				ID:    MakeCommitArtifactID(remoteURL, parentHash),
+				Label: parentHash,
+				Kind:  "git-commit",
+				Attrs: map[string]string{
+					"role":  "parent",
+					"index": strconv.Itoa(i),
+				},
+			})
+		}
+	}
+
+	// ArtifactsIn (before versions).
+	// Root commit => parentHash == "" and inputs should be empty.
+	// Input files are connected to parent 0 only.
+	for _, f := range inputs {
+		if f == nil || parentHash == "" {
+			continue
+		}
+		rec.ArtifactsIn = append(rec.ArtifactsIn, parser.ArtifactItem{
+			ID:    MakeArtifactID(remoteURL, parentHash, f.Name),
+			Label: f.Name,
+			Kind:  "git-file",
+			Attrs: map[string]string{
+				"hash": f.Hash.String(),
+				"size": strconv.FormatInt(f.Size, 10),
+				"mode": f.Mode.String(),
+			},
+		})
+	}
+
+	// Add the commit itself as an output artifact.
+	rec.ArtifactsOut = append(rec.ArtifactsOut, parser.ArtifactItem{
+		ID:    MakeCommitArtifactID(remoteURL, c.Hash.String()),
+		Label: c.Hash.String(),
+		Kind:  "git-commit",
+		Attrs: map[string]string{
+			"message": strings.TrimSpace(c.Message),
+			"author":  c.Author.Email,
+			"time":    strconv.FormatInt(c.Author.When.Unix(), 10),
+		},
+	})
+
+	// ArtifactsOut (after versions).
+	for _, f := range outputs {
+		if f == nil {
+			continue
+		}
+		rec.ArtifactsOut = append(rec.ArtifactsOut, parser.ArtifactItem{
+			ID:    MakeArtifactID(remoteURL, c.Hash.String(), f.Name),
+			Label: f.Name,
+			Kind:  "git-file",
+			Attrs: map[string]string{
+				"content-hash": f.Hash.String(),
+				"size":         strconv.FormatInt(f.Size, 10),
+				"mode":         f.Mode.String(),
+			},
+		})
+	}
+
+	rec.Resources = append(rec.Resources, parser.ResourceItem{
+		ID:    "resource:git",
+		Label: "git",
+		Kind:  "vcs",
+	})
+
+	return rec, nil
+}
+
+// Parse clones the Git repository from the given URL into memory, extracts commits,
+// and maps them into a parser.Mapped structure for AStRA.
 //
-// Each commit is represented as a step, authors as principals, Git as a resource
+// Each commit is represented as a step, authors as principals, Git as a resource,
 // parent commits as input artifacts, and the commit itself plus changed files
 // as output artifacts.
 func (p *GitParser) Parse(repoURL string) (parser.Mapped, error) {
-	tmpDir := filepath.Join(os.TempDir(), "gitrepo-history")
-	_ = os.RemoveAll(tmpDir) // cleanup from previous runs
-
 	fmt.Println("Cloning:", repoURL)
-	fmt.Println("Into   :", tmpDir)
 
-	repo, err := git.PlainClone(tmpDir, false, &git.CloneOptions{
+	repo, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
 	})
@@ -226,7 +329,6 @@ func (p *GitParser) Parse(repoURL string) (parser.Mapped, error) {
 		return parser.Mapped{}, fmt.Errorf("origin remote has no URLs")
 	}
 	remoteURL := remoteURLs[0]
-	fmt.Println("remote:", remoteURL)
 
 	ref, err := repo.Head()
 	if err != nil {
@@ -244,108 +346,10 @@ func (p *GitParser) Parse(repoURL string) (parser.Mapped, error) {
 	}
 
 	err = commits.ForEach(func(c *object.Commit) error {
-		rec := parser.Record{
-			Step: parser.Item{
-				ID:    MakeStepID(remoteURL, c.Hash.String()),
-				Label: "Commit",
-				Kind:  "step",
-				Attrs: map[string]string{
-					"phase":   "source",
-					"message": strings.TrimSpace(c.Message),
-				},
-			},
-			Principal: parser.Item{
-				ID:    "principal:" + c.Author.Email,
-				Label: c.Author.Name,
-				Kind:  "principal",
-				Attrs: map[string]string{"email": c.Author.Email},
-			},
-		}
-
-		// Compute IO as file objects
-		inputs, outputs, err := GetCommitIO(repo, c.Hash.String())
+		rec, err := commitToRecord(c, repo, remoteURL)
 		if err != nil {
 			return err
 		}
-
-		// Parent hash is needed to version the "before" (input) artifacts
-		parentHash := ""
-		// Parent commit(s) as input artifacts
-		if c.NumParents() > 0 {
-			for i := 0; i < c.NumParents(); i++ {
-				parent, err := c.Parent(i)
-				if err != nil {
-					return err
-				}
-				parentHash = parent.Hash.String()
-				rec.ArtifactsIn = append(rec.ArtifactsIn, parser.Item{
-					ID:    MakeCommitArtifactID(remoteURL, parentHash),
-					Label: parentHash,
-					Kind:  "git-commit",
-					Attrs: map[string]string{
-						"role":  "parent",
-						"index": strconv.Itoa(i),
-					},
-				})
-			}
-		}
-
-		// ArtifactsIn (before versions)
-		// Root commit => parentHash == "" and inputs should be empty.
-		// input files are connected to parent 0 only
-
-		for _, f := range inputs {
-			if f == nil || parentHash == "" {
-				continue
-			}
-			rec.ArtifactsIn = append(rec.ArtifactsIn, parser.Item{
-				ID:    MakeArtifactID(remoteURL, parentHash, f.Name),
-				Label: f.Name,
-				Kind:  "git-file",
-				Attrs: map[string]string{
-					"hash": f.Hash.String(),
-					"size": strconv.FormatInt(f.Size, 10),
-					"mode": f.Mode.String(),
-				},
-			})
-		}
-
-		//add the commit as output artifact
-		rec.ArtifactsOut = append(rec.ArtifactsOut, parser.Item{
-			ID:    MakeCommitArtifactID(remoteURL, c.Hash.String()),
-			Label: c.Hash.String(),
-			Kind:  "git-commit",
-			Attrs: map[string]string{
-				"message": strings.TrimSpace(c.Message),
-				"author":  c.Author.Email,
-				"time":    strconv.FormatInt(c.Author.When.Unix(), 10), //TODO check format consistency
-			},
-		})
-
-		// ArtifactsOut (after versions)
-		for _, f := range outputs {
-			if f == nil {
-				continue
-			}
-			rec.ArtifactsOut = append(rec.ArtifactsOut, parser.Item{
-				ID:    MakeArtifactID(remoteURL, c.Hash.String(), f.Name),
-				Label: f.Name,
-				Kind:  "git-file",
-				Attrs: map[string]string{
-					"content-hash": f.Hash.String(),
-					"size":         strconv.FormatInt(f.Size, 10),
-					"mode":         f.Mode.String(),
-				},
-			})
-		}
-
-		// Resources
-		rec.Resources = append(rec.Resources, parser.Item{
-			ID:    "resource:git",
-			Label: "git",
-			Kind:  "vcs",
-		})
-
 		out.Mapped = append(out.Mapped, rec)
 		return nil
 	})

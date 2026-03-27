@@ -44,8 +44,8 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 	scanner := bufio.NewScanner(file)
 
 	var source, version, buildDate, buildOrigin, buildArch string
-	var outputItems []parser.Item
-	var depItems []parser.Item
+	var outputItems []parser.ArtifactItem
+	var depItems []parser.ResourceItem
 	var pgpLines []string
 	seenDeps := map[string]bool{}
 
@@ -94,7 +94,7 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 				hash, size, filename := parts[0], parts[1], parts[2]
 				pkgName := strings.SplitN(filename, "_", 2)[0]
 				purl := fmt.Sprintf("pkg:deb/debian/%s@%s?arch=%s", pkgName, version, buildArch)
-				outputItems = append(outputItems, parser.Item{
+				outputItems = append(outputItems, parser.ArtifactItem{
 					ID:    purl,
 					Label: filename,
 					Kind:  "deb",
@@ -115,7 +115,7 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 				purl := fmt.Sprintf("pkg:deb/debian/%s@%s", pkg, ver)
 				if !seenDeps[purl] {
 					seenDeps[purl] = true
-					depItems = append(depItems, parser.Item{
+					depItems = append(depItems, parser.ResourceItem{
 						ID:    purl,
 						Label: pkg,
 						Kind:  "deb",
@@ -149,7 +149,7 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 	// Source tarball uses ?arch=source to distinguish it from installable binary packages
 	// per the PURL deb spec convention. The buildinfo version is used.
 	tarballPURL := fmt.Sprintf("pkg:deb/debian/%s@%s?arch=source", source, upstreamVersion)
-	tarballResource := parser.Item{
+	tarballResource := parser.ResourceItem{
 		ID:    tarballPURL,
 		Label: tarball,
 		Kind:  "tarball",
@@ -163,7 +163,7 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 	if keyID != "" {
 		principalAttrs["pgp_key_id"] = keyID
 	}
-	principal := parser.Item{
+	principal := parser.PrincipalItem{
 		ID:    fmt.Sprintf("principal:%s", buildOrigin),
 		Label: "Debian Build Infrastructure",
 		Kind:  "principal",
@@ -171,7 +171,7 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 	}
 
 	rec := parser.Record{
-		Step: parser.Item{
+		Step: parser.StepItem{
 			ID:    fmt.Sprintf("step:build:deb/%s@%s", source, version),
 			Label: "dpkg-buildpackage",
 			Kind:  "build",
@@ -183,7 +183,7 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 		},
 		Principal:    principal,
 		ArtifactsOut: outputItems,
-		Resources:    append([]parser.Item{tarballResource}, depItems...),
+		Resources:    append([]parser.ResourceItem{tarballResource}, depItems...),
 	}
 
 	return parser.Mapped{
