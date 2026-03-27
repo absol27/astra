@@ -144,12 +144,10 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 		}
 	}
 
-	// TODO(resource semantics): in the model, a resource "carries out" a step, which fits a tool like dpkg-buildpackage.
-	// So that would mean, the source tarball is arguably an input consumed by the step, not the agent that executes it?
 	upstreamVersion := strings.SplitN(version, "-", 2)[0]
 	tarball := fmt.Sprintf("%s_%s.orig.tar.xz", source, upstreamVersion)
-	// not sure what the conventional purl format for source tarballs is, since they don't have a version in the same way
-	// as packages do. Using the upstream version for now.
+	// Source tarball uses ?arch=source to distinguish it from installable binary packages
+	// per the PURL deb spec convention. The buildinfo version is used.
 	tarballPURL := fmt.Sprintf("pkg:deb/debian/%s@%s?arch=source", source, upstreamVersion)
 	tarballResource := parser.Item{
 		ID:    tarballPURL,
@@ -184,9 +182,8 @@ func parseBuildinfo(path string) (parser.Mapped, error) {
 			},
 		},
 		Principal:    principal,
-		ArtifactsIn:  depItems,
 		ArtifactsOut: outputItems,
-		Resources:    []parser.Item{tarballResource},
+		Resources:    append([]parser.Item{tarballResource}, depItems...),
 	}
 
 	return parser.Mapped{

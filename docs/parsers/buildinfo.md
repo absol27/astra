@@ -1,11 +1,9 @@
 ```
 principal:Debian
-    --uses-->
-pkg:deb/debian/<source>@<upstream>     (resource: source tarball)
-    --carries_out-->
-step:build:deb/<source>@<version>      (one step per buildinfo file)
-    --consumes-->  pkg:deb/debian/<dep>@<ver>   (xN build dependencies)
-    --produces-->  pkg:deb/debian/<pkg>@<ver>   (×M output .deb files)
+    --uses-->        pkg:deb/debian/<source>@<upstream>?arch=source   (resource: source tarball)
+    --uses-->        pkg:deb/debian/<dep>@<ver>                        (resource: each build dependency)
+    --carries_out--> step:build:deb/<source>@<version>                (one step per buildinfo file)
+    --produces-->    pkg:deb/debian/<pkg>@<ver>?arch=<arch>            (×M output .deb files)
 ```
 
 ## Field mapping
@@ -18,7 +16,7 @@ step:build:deb/<source>@<version>      (one step per buildinfo file)
 | `Build-Origin`             | Principal ID     | `principal:Debian`       |
 | PGP signature key ID       | Principal attrs  | `attrs["pgp_key_id"]`                              |
 | Source tarball (inferred)  | Resource         | `pkg:deb/debian/<source>@<upstream-version>`       |
-| `Installed-Build-Depends`  | ArtifactsIn      | Each pinned dep as a purl, consumed by step        |
+| `Installed-Build-Depends`  | Resources        | Each pinned dep as a purl                          |
 | `Checksums-Sha256` `.deb`  | ArtifactsOut     | Each output `.deb` produced by step                |
 
 Identifiers use [Package URL (purl)](https://github.com/package-url/purl-spec) format:
@@ -67,27 +65,7 @@ Installed-Build-Depends:
           "pgp_key_id": "9bb8aaf879f91bf7"
         }
       },
-      "artifacts_in": [
-        {
-          "id": "pkg:deb/debian/autoconf@2.69-11.1",
-          "label": "autoconf",
-          "kind": "deb",
-          "attrs": {
-            "purl": "pkg:deb/debian/autoconf@2.69-11.1",
-            "version": "2.69-11.1"
-          }
-        },
-        {
-          "id": "pkg:deb/debian/automake@1:1.16.2-1",
-          "label": "automake",
-          "kind": "deb",
-          "attrs": {
-            "purl": "pkg:deb/debian/automake@1:1.16.2-1",
-            "version": "1:1.16.2-1"
-          }
-        }
-        // ... 187 more build dependencies
-      ],
+      "artifacts_in": [],
       "artifacts_out": [
         {
           "id": "pkg:deb/debian/libghc-hinotify-dev@0.4-2",
@@ -116,14 +94,33 @@ Installed-Build-Depends:
       ],
       "resources": [
         {
-          "id": "pkg:deb/debian/haskell-hinotify@0.4",
+          "id": "pkg:deb/debian/haskell-hinotify@0.4?arch=source",
           "label": "haskell-hinotify_0.4.orig.tar.xz",
           "kind": "tarball",
           "attrs": {
             "format": "orig.tar.xz",
-            "purl": "pkg:deb/debian/haskell-hinotify@0.4"
+            "purl": "pkg:deb/debian/haskell-hinotify@0.4?arch=source"
+          }
+        },
+        {
+          "id": "pkg:deb/debian/autoconf@2.69-11.1",
+          "label": "autoconf",
+          "kind": "deb",
+          "attrs": {
+            "purl": "pkg:deb/debian/autoconf@2.69-11.1",
+            "version": "2.69-11.1"
+          }
+        },
+        {
+          "id": "pkg:deb/debian/automake@1:1.16.2-1",
+          "label": "automake",
+          "kind": "deb",
+          "attrs": {
+            "purl": "pkg:deb/debian/automake@1:1.16.2-1",
+            "version": "1:1.16.2-1"
           }
         }
+        // ... 187 more build dependencies
       ]
     }
   ]
@@ -136,13 +133,19 @@ Installed-Build-Depends:
 {
   "artifacts": [
     {
-      "id": "pkg:deb/debian/autoconf@2.69-11.1",
+      "id": "pkg:deb/debian/libghc-hinotify-dev@0.4-2?arch=arm64",
       "kind": "deb",
-      "name": "autoconf",
-      "version": "2.69-11.1",
-      "metadata": { "purl": "pkg:deb/debian/autoconf@2.69-11.1", "version": "2.69-11.1" }
+      "name": "libghc-hinotify-dev_0.4-2_arm64.deb",
+      "version": "0.4-2",
+      "metadata": { ... }
+    },
+    {
+      "id": "pkg:deb/debian/libghc-hinotify-prof@0.4-2?arch=arm64",
+      "kind": "deb",
+      "name": "libghc-hinotify-prof_0.4-2_arm64.deb",
+      "version": "0.4-2",
+      "metadata": { ... }
     }
-    // ... 190 artifacts total (189 deps + 2 outputs)
   ],
   "steps": [
     {
@@ -169,21 +172,24 @@ Installed-Build-Depends:
   ],
   "resources": [
     {
-      "id": "pkg:deb/debian/haskell-hinotify@0.4",
+      "id": "pkg:deb/debian/haskell-hinotify@0.4?arch=source",
       "type": "tarball",
       "uri": "",
       "format": "orig.tar.xz"
-    }
+    },
+    // ... 189 build dependency resources
   ],
   "edges": [
-    { "source": "principal:Debian",                              "target": "pkg:deb/debian/haskell-hinotify@0.4",              "relation": "uses"         },
-    { "source": "pkg:deb/debian/haskell-hinotify@0.4",          "target": "step:build:deb/haskell-hinotify@0.4-2",            "relation": "carries_out"  },
-    { "source": "step:build:deb/haskell-hinotify@0.4-2",        "target": "pkg:deb/debian/autoconf@2.69-11.1",                "relation": "consumes"     },
-    // ... 188 more consumes edges (one per build dependency)
-    { "source": "step:build:deb/haskell-hinotify@0.4-2",        "target": "pkg:deb/debian/libghc-hinotify-dev@0.4-2",         "relation": "produces"     },
-    { "source": "step:build:deb/haskell-hinotify@0.4-2",        "target": "pkg:deb/debian/libghc-hinotify-prof@0.4-2",        "relation": "produces"     }
+    { "source": "principal:Debian",                       "target": "pkg:deb/debian/haskell-hinotify@0.4?arch=source",  "relation": "uses"        },
+    { "source": "principal:Debian",                       "target": "pkg:deb/debian/autoconf@2.69-11.1",                "relation": "uses"        },
+    // ... 188 more uses edges (one per build dependency)
+    { "source": "pkg:deb/debian/haskell-hinotify@0.4?arch=source", "target": "step:build:deb/haskell-hinotify@0.4-2",  "relation": "carries_out" },
+    { "source": "pkg:deb/debian/autoconf@2.69-11.1",      "target": "step:build:deb/haskell-hinotify@0.4-2",           "relation": "carries_out" },
+    // ... 188 more carries_out edges (one per build dependency)
+    { "source": "step:build:deb/haskell-hinotify@0.4-2",  "target": "pkg:deb/debian/libghc-hinotify-dev@0.4-2?arch=arm64",  "relation": "produces" },
+    { "source": "step:build:deb/haskell-hinotify@0.4-2",  "target": "pkg:deb/debian/libghc-hinotify-prof@0.4-2?arch=arm64", "relation": "produces" }
   ]
 }
 ```
 
-Edge counts: 1 `uses`, 1 `carries_out`, 189 `consumes`, 2 `produces` = **193 total**.
+Edge counts: 190 `uses`, 190 `carries_out`, 2 `produces` = **382 total**.
