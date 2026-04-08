@@ -1,8 +1,10 @@
 package parser
 
+import "io"
+
 // Parser is the interface every parser must satisfy
 type Parser interface {
-	Parse(path string) (Mapped, error)
+	Parse(r io.Reader) (Mapped, error)
 }
 
 type StepItem struct {

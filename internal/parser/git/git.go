@@ -16,6 +16,7 @@ package git
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strconv"
@@ -309,7 +310,12 @@ func commitToRecord(c *object.Commit, repo *git.Repository, remoteURL string) (p
 // Each commit is represented as a step, authors as principals, Git as a resource,
 // parent commits as input artifacts, and the commit itself plus changed files
 // as output artifacts.
-func (p *GitParser) Parse(repoURL string) (parser.Mapped, error) {
+func (p *GitParser) Parse(r io.Reader) (parser.Mapped, error) {
+	urlBytes, err := io.ReadAll(r)
+	if err != nil {
+		return parser.Mapped{}, err
+	}
+	repoURL := strings.TrimSpace(string(urlBytes))
 	fmt.Println("Cloning:", repoURL)
 
 	repo, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{

@@ -19,7 +19,7 @@ package buildinfo
 import (
 	"bufio"
 	"fmt"
-	"os"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -30,18 +30,12 @@ import (
 
 type BuildinfoParser struct{}
 
-func (p *BuildinfoParser) Parse(path string) (parser.Mapped, error) {
-	return parseBuildinfo(path)
+func (p *BuildinfoParser) Parse(r io.Reader) (parser.Mapped, error) {
+	return parseBuildinfo(r)
 }
 
-func parseBuildinfo(path string) (parser.Mapped, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return parser.Mapped{}, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
+func parseBuildinfo(r io.Reader) (parser.Mapped, error) {
+	scanner := bufio.NewScanner(r)
 
 	var source, version, buildDate, buildOrigin, buildArch string
 	var outputItems []parser.ArtifactItem

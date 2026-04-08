@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
 
 	graph "github.com/TSELab/astra/internal/graph"
 	"github.com/TSELab/astra/internal/mapper"
@@ -16,13 +18,6 @@ import (
 	intotoparser "github.com/TSELab/astra/internal/parser/intoto"
 	slsaparser "github.com/TSELab/astra/internal/parser/slsa"
 )
-
-func must(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-}
 
 func writeJSON(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -35,139 +30,136 @@ func writeJSON(path string, v any) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("usage: astra <parse|map|graph|risk|condense> [flags]")
-		os.Exit(2)
-	}
-	sub := os.Args[1]
-	switch sub {
-	case "parse":
-		var parser parser.Parser
-		fs := flag.NewFlagSet("parse", flag.ExitOnError)
-		in := fs.String("i", "", "input raw log (JSON)")
-		out := fs.String("o", "", "output normalized JSON")
-		format := fs.String("f", "git", "format of input (git|intoto|slsa|buildinfo)")
-		fs.Parse(os.Args[2:])
-		if *in == "" || *out == "" {
-			fs.Usage()
-			os.Exit(2)
-		}
-		switch *format {
-		case "git": // git logs
-			parser = &gitparser.GitParser{}
-		case "intoto": // in-toto links
-			parser = &intotoparser.InTotoParser{}
-		case "slsa": // slsa
-			parser = &slsaparser.SlsaParser{}
-		case "buildinfo": // debian buildinfo logs
-			parser = &buildinfoparser.BuildinfoParser{}
+var parseCmd = &cobra.Command{
+	Use:   "parse",
+	Short: "Parse a provenance source into normalized records",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		in, _ := cmd.Flags().GetString("input")
+		out, _ := cmd.Flags().GetString("output")
+		format, _ := cmd.Flags().GetString("format")
 
+		var p parser.Parser
+		var r io.Reader
+
+		switch format {
+		case "git":
+			p = &gitparser.GitParser{}
+			r = strings.NewReader(in)
+		case "buildinfo":
+			p = &buildinfoparser.BuildinfoParser{}
+			f, err := os.Open(in)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			r = f
+		case "intoto":
+			p = &intotoparser.InTotoParser{}
+			f, err := os.Open(in)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			r = f
+		case "slsa":
+			p = &slsaparser.SlsaParser{}
+			f, err := os.Open(in)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			r = f
 		default:
-			fmt.Fprintf(os.Stderr, "unknown format: %s\n", *format)
-			os.Exit(1)
-		}
-		data, err := parser.Parse(*in)
-		must(err)
-		must(writeJSON(*out, data))
-		fmt.Println("[OK] Parsed ->", *out)
-	case "map":
-		fs := flag.NewFlagSet("map", flag.ExitOnError)
-		in := fs.String("i", "", "input parsed JSON (parser.Mapped)")
-		out := fs.String("o", "", "output AStRA graph JSON (typed)")
-
-		fs.Parse(os.Args[2:])
-
-		if *in == "" || *out == "" {
-			fs.Usage()
-			os.Exit(2)
+			return fmt.Errorf("unknown format: %s", format)
 		}
 
-		// Read parsed
-		var parsed parser.Mapped
-		b, err := os.ReadFile(*in)
-		must(err)
-		must(json.Unmarshal(b, &parsed))
-
-		// Convert to typed AStRA graph
-		astra := mapper.ToAstraGraph(parsed)
-
-		//  validate schema invariants
-		// must(graph.Validate(astra))
-
-		must(writeJSON(*out, astra))
-		fmt.Println("[OK] Mapped ->", *out)
-
-		//case "graph":
-	// TODO visual graph with cloned resources
-	/*
-		case "risk":
-				fs := flag.NewFlagSet("risk", flag.ExitOnError)
-				in := fs.String("i", "", "input graph JSON")
-				rep := fs.String("r", "", "output risk report JSON")
-				fromT := fs.String("paths-from", "", "optional source node type for shortest paths")
-				toT := fs.String("paths-to", "", "optional dest node type for shortest paths")
-				fs.Parse(os.Args[2:])
-				if *in == "" || *rep == "" {
-					fs.Usage()
-					os.Exit(2)
-				}
-				var g graph.AstraGraph
-				b, err := os.ReadFile(*in)
-				must(err)
-				must(json.Unmarshal(b, &g))
-				r := risk.ComputeRiskReport(g, *fromT, *toT)
-				must(writeJSON(*rep, r))
-				fmt.Println("[OK] Risk report ->", *rep)
-
-			case "condense":
-				fs := flag.NewFlagSet("condense", flag.ExitOnError)
-				in := fs.String("i", "", "input graph JSON")
-				out := fs.String("o", "", "output condensed JSON")
-				group := fs.String("group-by", "phase", "phase|type")
-				fs.Parse(os.Args[2:])
-				if *in == "" || *out == "" {
-					fs.Usage()
-					os.Exit(2)
-				}
-				var g graph.AstraGraph
-				b, err := os.ReadFile(*in)
-				must(err)
-				must(json.Unmarshal(b, &g))
-				cg := condense.Condense(g, *group)
-				must(writeJSON(*out, cg))
-				fmt.Println("[OK] Condensed ->", *out)
-	*/
-	case "viz":
-		fs := flag.NewFlagSet("viz", flag.ExitOnError)
-		in := fs.String("i", "", "input graph JSON")
-		out := fs.String("o", "graph.dot", "output DOT file")
-		fs.Parse(os.Args[2:])
-
-		if *in == "" {
-			fs.Usage()
-			os.Exit(2)
-		}
-
-		graphJSON, err := os.ReadFile(*in)
+		data, err := p.Parse(r)
 		if err != nil {
-			log.Fatal(err)
+			return err
+		}
+		if err := writeJSON(out, data); err != nil {
+			return err
+		}
+		fmt.Println("[OK] Parsed ->", out)
+		return nil
+	},
+}
+
+var mapCmd = &cobra.Command{
+	Use:   "map",
+	Short: "Map normalized records to an AStRA graph",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		in, _ := cmd.Flags().GetString("input")
+		out, _ := cmd.Flags().GetString("output")
+
+		b, err := os.ReadFile(in)
+		if err != nil {
+			return err
+		}
+		var parsed parser.Mapped
+		if err := json.Unmarshal(b, &parsed); err != nil {
+			return err
 		}
 
+		astra := mapper.ToAstraGraph(parsed)
+		if err := writeJSON(out, astra); err != nil {
+			return err
+		}
+		fmt.Println("[OK] Mapped ->", out)
+		return nil
+	},
+}
+
+var vizCmd = &cobra.Command{
+	Use:   "viz",
+	Short: "Render an AStRA graph as DOT",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		in, _ := cmd.Flags().GetString("input")
+		out, _ := cmd.Flags().GetString("output")
+
+		graphJSON, err := os.ReadFile(in)
+		if err != nil {
+			return err
+		}
 		var g graph.AstraGraph
 		if err := json.Unmarshal(graphJSON, &g); err != nil {
-			log.Fatal(err)
+			return err
 		}
-
 		dot := graph.ToDOT(g)
-		if err := os.WriteFile(*out, []byte(dot), 0644); err != nil {
-			log.Fatal(err)
+		if err := os.WriteFile(out, []byte(dot), 0o644); err != nil {
+			return err
 		}
-		fmt.Println("[OK] DOT graph written to", *out)
+		fmt.Println("[OK] DOT graph written to", out)
+		return nil
+	},
+}
 
-	default:
-		fmt.Println("unknown subcommand:", sub)
-		os.Exit(2)
+var rootCmd = &cobra.Command{
+	Use:   "astra",
+	Short: "AStRA provenance graph tool",
+}
 
+func init() {
+	parseCmd.Flags().StringP("input", "i", "", "input file path or repo URL (git)")
+	parseCmd.Flags().StringP("output", "o", "", "output normalized JSON")
+	parseCmd.Flags().StringP("format", "f", "git", "format: git|buildinfo|intoto|slsa")
+	parseCmd.MarkFlagRequired("input")
+	parseCmd.MarkFlagRequired("output")
+
+	mapCmd.Flags().StringP("input", "i", "", "input parsed JSON (parser.Mapped)")
+	mapCmd.Flags().StringP("output", "o", "", "output AStRA graph JSON")
+	mapCmd.MarkFlagRequired("input")
+	mapCmd.MarkFlagRequired("output")
+
+	vizCmd.Flags().StringP("input", "i", "", "input graph JSON")
+	vizCmd.Flags().StringP("output", "o", "graph.dot", "output DOT file")
+	vizCmd.MarkFlagRequired("input")
+
+	rootCmd.AddCommand(parseCmd, mapCmd, vizCmd)
+}
+
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
 }

@@ -1,7 +1,7 @@
 package slsa
 
 import (
-	"os"
+	"io"
 	"time"
 
 	parser "github.com/TSELab/astra/internal/parser"
@@ -9,8 +9,8 @@ import (
 
 type SlsaParser struct{}
 
-func (p *SlsaParser) Parse(path string) (parser.Mapped, error) {
-	b, err := os.ReadFile(path)
+func (p *SlsaParser) Parse(r io.Reader) (parser.Mapped, error) {
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return parser.Mapped{}, err
 	}
