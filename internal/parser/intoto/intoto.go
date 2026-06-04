@@ -131,11 +131,20 @@ func buildRecord(lf linkFile, raw []byte, linker string) (parser.Record, error) 
 	materials := buildArtifacts(lf.Signed.Name, lf.Signed.Materials, "material", "incomplete")
 	products := buildArtifacts(lf.Signed.Name, lf.Signed.Products, "product", "complete")
 
+	resource := parser.ResourceItem{
+		ID:           "linker:" + linker,
+		Label:        linker,
+		Kind:         "linker",
+		Completeness: "complete",
+		Attrs:        map[string]string{"name": linker},
+	}
+
 	return parser.Record{
 		Step:         step,
 		Principal:    principal,
 		ArtifactsIn:  materials,
 		ArtifactsOut: products,
+		Resources:    []parser.ResourceItem{resource},
 	}, nil
 }
 
@@ -168,14 +177,14 @@ func buildPrincipal(lf linkFile) parser.PrincipalItem {
 		keyID := lf.Signatures[0].KeyID
 		return parser.PrincipalItem{
 			ID:    fmt.Sprintf("principal:intoto:%s", keyID),
-			Label: lf.Signed.Name,
+			Label: keyID,
 			Kind:  "principal",
 			Attrs: map[string]string{"keyid": keyID},
 		}
 	}
 	return parser.PrincipalItem{
 		ID:    "principal:intoto:unsigned",
-		Label: lf.Signed.Name,
+		Label: "unsigned",
 		Kind:  "principal",
 		Attrs: map[string]string{},
 	}

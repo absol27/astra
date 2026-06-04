@@ -7,41 +7,128 @@ import (
 	"strings"
 )
 
-// To DOT renders an AstraGraph into Graphviz DOT format.
+// ToDOT renders an AstraGraph into Graphviz DOT format.
+//
+// Output file artifacts (git-file nodes that are only ever produced, never
+// consumed) are omitted: if file A was consumed, it is self-evident that the
+// step produced a new version of file A. Only consumed file artifacts are
+// shown, keeping the graph linear: commit → step → commit → …
 func ToDOT(g AstraGraph) string {
+	// Build the set of git-file artifact IDs that appear as inputs (consumed).
+	// These are the only file artifacts we render.
+	consumedFiles := map[string]bool{}
+	for _, e := range g.Edges {
+		if e.Relation == "consumes" {
+			if a, ok := g.Artifacts[e.Source]; ok && a.Kind == "git-file" {
+				consumedFiles[e.Source] = true
+			}
+		}
+	}
+
+	// Filter edges: drop "produces" edges whose target is a git-file artifact.
+	var edges []Edge
+	for _, e := range g.Edges {
+		if e.Relation == "produces" {
+			if a, ok := g.Artifacts[e.Target]; ok && a.Kind == "git-file" {
+				continue
+			}
+		}
+		edges = append(edges, e)
+	}
+
+	// Stable sort for deterministic output.
+	sort.Slice(edges, func(i, j int) bool {
+		ei, ej := edges[i], edges[j]
+		if ei.Source != ej.Source {
+			return ei.Source < ej.Source
+		}
+		if ei.Relation != ej.Relation {
+			return ei.Relation < ej.Relation
+		}
+		return ei.Target < ej.Target
+	})
+
 	var b strings.Builder
 	b.WriteString("digraph astra {\n")
 
-	// Artifacts
-	for _, n := range g.Artifacts {
-		b.WriteString(fmt.Sprintf(
-			"  \"%s\" [label=\"%s\\n(Artifact)\" shape=box];\n",
-			n.ID, n.Name))
+	// Artifacts: commit artifacts always shown; file artifacts only if consumed.
+	artifactIDs := make([]string, 0, len(g.Artifacts))
+	for id := range g.Artifacts {
+		artifactIDs = append(artifactIDs, id)
 	}
+	sort.Strings(artifactIDs)
+	for _, id := range artifactIDs {
+		n := g.Artifacts[id]
+		if n.Kind == "git-file" && !consumedFiles[id] {
+			continue
+		}
+		var label string
+		if n.Kind == "git-commit" && n.Version != "" {
+			short := n.Version
+			if len(short) > 8 {
+				short = short[:8]
+			}
+			label = "commit:" + short
+		} else {
+			label = n.Name
+			if n.Version != "" {
+				short := n.Version
+				if len(short) > 8 {
+					short = short[:8]
+				}
+				label = label + "@" + short
+			}
+		}
+		fmt.Fprintf(&b, "  \"%s\" [label=\"%s\\n(Artifact)\" shape=box];\n", id, label)
+	}
+
 	// Steps
-	for _, n := range g.Steps {
-		b.WriteString(fmt.Sprintf(
-			"  \"%s\" [label=\"%s\\n(Step)\" shape=diamond];\n",
-			n.ID, n.Command))
+	stepIDs := make([]string, 0, len(g.Steps))
+	for id := range g.Steps {
+		stepIDs = append(stepIDs, id)
 	}
+	sort.Strings(stepIDs)
+	for _, id := range stepIDs {
+		n := g.Steps[id]
+		label := n.Command
+		if label == "" {
+			if msg, ok := n.Metadata["message"]; ok && msg != "" {
+				if i := strings.Index(msg, "\n"); i >= 0 {
+					msg = msg[:i]
+				}
+				if len(msg) > 40 {
+					msg = msg[:40] + "..."
+				}
+				label = msg
+			}
+		}
+		fmt.Fprintf(&b, "  \"%s\" [label=\"%s\\n(Step)\" shape=diamond];\n", id, label)
+	}
+
 	// Principals
-	for _, n := range g.Principals {
-		b.WriteString(fmt.Sprintf(
-			"  \"%s\" [label=\"%s\\n(Principal)\" shape=oval];\n",
-			n.ID, n.ID))
+	principalIDs := make([]string, 0, len(g.Principals))
+	for id := range g.Principals {
+		principalIDs = append(principalIDs, id)
 	}
+	sort.Strings(principalIDs)
+	for _, id := range principalIDs {
+		n := g.Principals[id]
+		fmt.Fprintf(&b, "  \"%s\" [label=\"%s\\n(Principal)\" shape=oval];\n", id, n.Name)
+	}
+
 	// Resources
-	for _, n := range g.Resources {
-		b.WriteString(fmt.Sprintf(
-			"  \"%s\" [label=\"%s\\n(Resource)\" shape=hexagon];\n",
-			n.ID, n.ID))
+	resourceIDs := make([]string, 0, len(g.Resources))
+	for id := range g.Resources {
+		resourceIDs = append(resourceIDs, id)
+	}
+	sort.Strings(resourceIDs)
+	for _, id := range resourceIDs {
+		fmt.Fprintf(&b, "  \"%s\" [label=\"%s\\n(Resource)\" shape=hexagon];\n", id, id)
 	}
 
 	// Edges
-	for _, e := range g.Edges {
-		b.WriteString(fmt.Sprintf(
-			"  \"%s\" -> \"%s\" [label=\"%s\"];\n",
-			e.Source, e.Target, e.Relation))
+	for _, e := range edges {
+		fmt.Fprintf(&b, "  \"%s\" -> \"%s\" [label=\"%s\"];\n", e.Source, e.Target, e.Relation)
 	}
 	b.WriteString("}\n")
 	return b.String()

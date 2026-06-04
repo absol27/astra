@@ -127,6 +127,9 @@ func ToAstraGraph(m parser.Mapped) graph.AstraGraph {
 			addEdge(rec.Principal.ID, r.ID, "uses", nil)
 			addEdge(r.ID, rec.Step.ID, "carries_out", nil)
 		}
+		if rec.Principal.ID != "" && rec.Step.ID != "" {
+			addEdge(rec.Principal.ID, rec.Step.ID, "performs", nil)
+		}
 
 		for _, dep := range rec.Dependencies {
 			if dep.ID == "" {
